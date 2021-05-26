@@ -107,6 +107,7 @@ public:
 
 template <typename CharT> using is_std_char_type = any_of<
     std::is_same<CharT, char>, /* std::string */
+    std::is_same<CharT, uint8_t>, /* std::basic_string<uint8_t> and std::basic_string_view<uint8_t> */
 #if defined(PYBIND11_HAS_U8STRING)
     std::is_same<CharT, char8_t>, /* std::u8string */
 #endif
