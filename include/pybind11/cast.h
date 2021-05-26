@@ -389,9 +389,13 @@ template <typename StringType, bool IsView = false> struct string_caster {
     static handle cast(const StringType &src, return_value_policy /* policy */, handle /* parent */) {
         const char *buffer = reinterpret_cast<const char *>(src.data());
         auto nbytes = ssize_t(src.size() * sizeof(CharT));
-        handle s = decode_utfN(buffer, nbytes);
-        if (!s) throw error_already_set();
-        return s;
+        if (std::is_same_v<CharT, uint8_t>)
+            return PyBytes_FromStringAndSize(buffer, nbytes);
+        else {      
+          handle s = decode_utfN(buffer, nbytes);
+          if (!s) throw error_already_set();
+          return s;
+        }
     }
 
     PYBIND11_TYPE_CASTER(StringType, _(PYBIND11_STRING_NAME));
@@ -409,18 +413,20 @@ private:
         return PyUnicode_Decode(buffer, nbytes, UTF_N == 8 ? "utf-8" : UTF_N == 16 ? "utf-16" : "utf-32", nullptr);
 #endif
     }
-
+    template<typename C>
+    using accept_bytes_as_is = any_of<std::is_same<C, char>, std::is_same<C, uint8_t>>;
+    
     // When loading into a std::string or char*, accept a bytes object as-is (i.e.
     // without any encoding/decoding attempt).  For other C++ char sizes this is a no-op.
     // which supports loading a unicode from a str, doesn't take this path.
     template <typename C = CharT>
-    bool load_bytes(enable_if_t<std::is_same<C, char>::value, handle> src) {
+    bool load_bytes(enable_if_t<accept_bytes_as_is<C>::value, handle> src) {
         if (PYBIND11_BYTES_CHECK(src.ptr())) {
             // We were passed a Python 3 raw bytes; accept it into a std::string or char*
             // without any encoding attempt.
             const char *bytes = PYBIND11_BYTES_AS_STRING(src.ptr());
             if (bytes) {
-                value = StringType(bytes, (size_t) PYBIND11_BYTES_SIZE(src.ptr()));
+                value = StringType((const C *) bytes, (size_t) PYBIND11_BYTES_SIZE(src.ptr()));
                 return true;
             }
         }
@@ -429,7 +435,9 @@ private:
     }
 
     template <typename C = CharT>
-    bool load_bytes(enable_if_t<!std::is_same<C, char>::value, handle>) { return false; }
+    bool load_bytes(enable_if_t<!accept_bytes_as_is<C>::value, handle>) {
+        return false;
+    }
 };
 
 template <typename CharT, class Traits, class Allocator>
